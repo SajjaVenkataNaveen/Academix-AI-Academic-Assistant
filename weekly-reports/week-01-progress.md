@@ -8,7 +8,7 @@
 | **Student**        | Sajja Venkata Naveen                                     |
 | **Semester**       | 5th Semester                                             |
 | **Institute**      | IIIT Sri City                                            |
-| **Faculty Mentor** | Prasenjit B                                              |
+| **Faculty Mentor** | Dr.Prasenjit B                                              |
 | **Project Domain** | Conversational AI / Retrieval-Augmented Generation (RAG) |
 | **Repository**     | Private GitHub Repository                                |
 
