@@ -9,14 +9,31 @@ export class UsersService {
   constructor(private prisma: PrismaService) {}
 
   async getUsers() {
-    return this.prisma.user.findMany();
+    return this.prisma.user.findMany({
+  select: {
+    id: true,
+    name: true,
+    email: true,
+    role: true,
+    createdAt: true,
+    updatedAt: true,
+  },
+});
   }
 
   async getUser(id: string) {
     return this.prisma.user.findUnique({
-      where: { id },
+        where: { id },
+        select: {
+            id: true,
+            name: true,
+            email: true,
+            role: true,
+            createdAt: true,
+            updatedAt: true,
+        },
     });
-  }
+}
 
   async createUser(data: CreateUserDto) {
     return this.prisma.user.create({

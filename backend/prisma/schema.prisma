@@ -160,3 +160,30 @@ enum MessageSender {
   USER
   AI
 }
+
+model Document {
+  id        String   @id @default(cuid())
+  title     String
+  filename  String
+  path      String
+  mimetype  String
+  size      Int
+  extractedText String?
+
+  chunks    DocumentChunk[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model DocumentChunk {
+  id         String   @id @default(cuid())
+  content    String
+  chunkIndex Int
+  embedding  Float[]
+
+  documentId String
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  createdAt  DateTime @default(now())
+}
