@@ -14,12 +14,18 @@ import { AuthModule } from '../auth/auth.module';
     PrismaModule,
     AuthModule,
   ],
+
   controllers: [DocumentsController],
+
   providers: [
-  DocumentsService,
-  TextExtractionService,
-  ChunkingService,
-  EmbeddingService,
-],
+    DocumentsService,
+    TextExtractionService,
+    ChunkingService,
+    EmbeddingService,
+  ],
+
+  exports: [
+    EmbeddingService,
+  ],
 })
 export class DocumentsModule {}
