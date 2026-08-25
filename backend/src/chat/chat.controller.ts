@@ -41,26 +41,32 @@ export class ChatController {
   }
 
   @Post()
-  @ApiBody({
-    schema: {
-      type: 'object',
-      properties: {
-        title: {
-          type: 'string',
-          example: 'DBMS Doubts',
-        },
+@ApiBody({
+  schema: {
+    type: 'object',
+    properties: {
+      title: {
+        type: 'string',
+        example: 'Income Question',
+      },
+      documentId: {
+        type: 'string',
+        example: 'cm123456789',
       },
     },
-  })
-  createConversation(
-    @Body('title') title: string,
-    @Req() req: any,
-  ) {
-    return this.chatService.createConversation(
-      req.user.sub,
-      title,
-    );
-  }
+  },
+})
+createConversation(
+  @Body('title') title: string,
+  @Body('documentId') documentId: string,
+  @Req() req: any,
+) {
+  return this.chatService.createConversation(
+    req.user.sub,
+    title,
+    documentId,
+  );
+}
 
   @Post(':id/messages')
   @ApiBody({

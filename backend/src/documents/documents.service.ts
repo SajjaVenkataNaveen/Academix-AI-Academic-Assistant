@@ -36,9 +36,13 @@ export class DocumentsService {
   async uploadDocument(file: any) {
     // 1. Extract text from PDF
     const extractedText =
-      file.mimetype === 'application/pdf'
-        ? await this.textExtractionService.extractText(file.path)
-        : null;
+  file.mimetype === 'application/pdf'
+    ? await this.textExtractionService.extractText(file.path)
+    : null;
+
+console.log('========== EXTRACTED TEXT ==========');
+console.log(extractedText);
+console.log('====================================');
 
     // 2. Create chunks
     const chunks = extractedText
