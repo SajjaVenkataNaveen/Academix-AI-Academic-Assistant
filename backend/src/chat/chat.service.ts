@@ -47,14 +47,31 @@ export class ChatService {
     return conversation;
   }
 
-  async createConversation(userId: string, title?: string) {
-    return this.prisma.conversation.create({
-      data: {
-        userId,
-        title,
+  async createConversation(
+  userId: string,
+  title?: string,
+  documentId?: string,
+) {
+  if (documentId) {
+    const document = await this.prisma.document.findUnique({
+      where: {
+        id: documentId,
       },
     });
+
+    if (!document) {
+      throw new NotFoundException('Document not found');
+    }
   }
+
+  return this.prisma.conversation.create({
+    data: {
+      userId,
+      title,
+      documentId,
+    },
+  });
+}
 
   private cosineSimilarity(a: number[], b: number[]): number {
   // Invalid embeddings
@@ -94,108 +111,236 @@ export class ChatService {
   );
 }
 
-  private async findRelevantChunks(question: string) {
+  private async findRelevantChunks(
+  question: string,
+  documentId: string,
+) {
   // 1. Generate embedding for the question
   const questionEmbedding =
     await this.embeddingService.generateEmbedding(question);
 
-  // 2. Get all stored chunks
-  const chunks = await this.prisma.documentChunk.findMany();
+  // 2. Get chunks ONLY from this document
+  const chunks = await this.prisma.documentChunk.findMany({
+  where: {
+    documentId,
+  },
+  include: {
+    document: {
+      select: {
+        id: true,
+        title: true,
+        filename: true,
+      },
+    },
+  },
+});
+
+  console.log(
+    `Searching ${chunks.length} chunks from document ${documentId}`,
+  );
 
   // 3. Calculate similarity
   const rankedChunks = chunks
-  .map((chunk) => ({
-    ...chunk,
-    similarity: this.cosineSimilarity(
-      questionEmbedding,
-      chunk.embedding,
-    ),
-  }))
-  .filter((chunk) => Number.isFinite(chunk.similarity));
+    .map((chunk) => ({
+      ...chunk,
+      similarity: this.cosineSimilarity(
+        questionEmbedding,
+        chunk.embedding,
+      ),
+    }))
+    .filter((chunk) => Number.isFinite(chunk.similarity));
 
   // 4. Sort by highest similarity
   rankedChunks.sort(
     (a, b) => b.similarity - a.similarity,
   );
 
-  // 5. Return top 3
-  return rankedChunks.slice(0, 3);
+ // 5. Keep only sufficiently relevant chunks
+const relevantChunks = rankedChunks
+  .filter((chunk) => chunk.similarity >= 0.45)
+  .slice(0, 3);
+
+return relevantChunks;
+}
+
+  private generateConversationTitle(content: string): string {
+  const cleaned = content
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (!cleaned) {
+    return 'New Conversation';
+  }
+
+  if (cleaned.length <= 50) {
+    return cleaned;
+  }
+
+  return `${cleaned.substring(0, 47)}...`;
 }
 
   async addMessage(
-    conversationId: string,
-    userId: string,
-    content: string,
-  ) {
-    // 1. Check conversation belongs to logged-in user
-    const conversation = await this.prisma.conversation.findFirst({
+  conversationId: string,
+  userId: string,
+  content: string,
+) {
+  // 1. Check conversation belongs to logged-in user
+  const conversation = await this.prisma.conversation.findFirst({
+    where: {
+      id: conversationId,
+      userId,
+    },
+  });
+
+  if (!conversation) {
+    throw new NotFoundException('Conversation not found');
+  }
+
+  // 2. Save user's message
+  const userMessage = await this.prisma.message.create({
+    data: {
+      content,
+      sender: 'USER',
+      conversationId,
+    },
+  });
+
+  // Automatically generate title from the first user message
+if (!conversation.title) {
+  const title = this.generateConversationTitle(content);
+
+  await this.prisma.conversation.update({
+    where: {
+      id: conversationId,
+    },
+    data: {
+      title,
+    },
+  });
+}
+
+  // 3. Make sure a document is attached
+  if (!conversation.documentId) {
+    throw new NotFoundException(
+      'No document is attached to this conversation',
+    );
+  }
+
+  // 4. Get previous conversation messages
+  const previousMessages =
+    await this.prisma.message.findMany({
       where: {
-        id: conversationId,
-        userId,
-      },
-    });
-
-    if (!conversation) {
-      throw new NotFoundException('Conversation not found');
-    }
-
-    // 2. Save user's message
-    const userMessage = await this.prisma.message.create({
-      data: {
-        content,
-        sender: 'USER',
         conversationId,
+        id: {
+          not: userMessage.id,
+        },
       },
+      orderBy: {
+        createdAt: 'asc',
+      },
+      take: 10,
     });
 
-    // 3. Find relevant document chunks
-const relevantChunks =
-  await this.findRelevantChunks(content);
+  // 5. Find relevant document chunks
+  const relevantChunks =
+    await this.findRelevantChunks(
+      content,
+      conversation.documentId,
+    );
 
-console.log(
-  'Relevant chunks:',
-  relevantChunks.map((chunk) => ({
-    chunkIndex: chunk.chunkIndex,
-    similarity: chunk.similarity,
-  })),
-);
+  console.log(
+    'Relevant chunks:',
+    relevantChunks.map((chunk) => ({
+      chunkIndex: chunk.chunkIndex,
+      similarity: chunk.similarity,
+    })),
+  );
 
-  const context = relevantChunks
-  .map((chunk) => chunk.content)
-  .join('\n\n');
+  // 6. Create conversation history
+  const conversationHistory = previousMessages
+    .map((message) => {
+      const role =
+        message.sender === 'USER'
+          ? 'User'
+          : 'Assistant';
 
-    // 4. Send question + context to Gemini
-const prompt = `
-You are an academic assistant.
+      return `${role}: ${message.content}`;
+    })
+    .join('\n');
 
-Answer the user's question using the provided document context.
-
-If the answer is not present in the context, say:
-"I could not find this information in the uploaded documents."
-
-Document context:
-${context}
-
-User question:
-${content}
-`;
-
-const aiResponse =
-  await this.aiService.generateResponse(prompt);
-
-    // 4. Save Gemini's response
+  // 7. If no relevant document information was found
+  if (relevantChunks.length === 0) {
     const aiMessage = await this.prisma.message.create({
       data: {
-        content: aiResponse,
+        content:
+          'I could not find this information in the uploaded document.',
         sender: 'AI',
         conversationId,
       },
     });
 
-    // 5. Return both messages
     return {
       userMessage,
       aiMessage,
+      sources: [],
     };
   }
+
+  // 8. Build document context
+  const context = relevantChunks
+    .map((chunk) => chunk.content)
+    .join('\n\n');
+
+  // 9. Create prompt for Gemini
+  const prompt = `
+You are an academic assistant.
+
+Answer the user's question using the provided document context
+and the previous conversation.
+
+Use the conversation history to understand references such as:
+"he", "she", "it", "that", "the candidate", "the above", etc.
+
+Answer only using information supported by the document context
+and conversation.
+
+If the answer is not present in the context, say:
+"I could not find this information in the uploaded documents."
+
+Previous conversation:
+${conversationHistory}
+
+Document context:
+${context}
+
+Current user question:
+${content}
+`;
+
+  // 10. Send prompt to Gemini
+  const aiResponse =
+    await this.aiService.generateResponse(prompt);
+
+  // 11. Save Gemini's response
+  const aiMessage = await this.prisma.message.create({
+    data: {
+      content: aiResponse,
+      sender: 'AI',
+      conversationId,
+    },
+  });
+
+  // 12. Return messages + sources
+  return {
+    userMessage,
+    aiMessage,
+    sources: relevantChunks.map((chunk) => ({
+      documentId: chunk.document.id,
+      documentTitle: chunk.document.title,
+      filename: chunk.document.filename,
+      chunkIndex: chunk.chunkIndex,
+      similarity: chunk.similarity,
+    })),
+  };
+}
 }
