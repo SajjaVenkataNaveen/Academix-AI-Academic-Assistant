@@ -1,4 +1,5 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { promises as fs } from 'fs';
 import { PrismaService } from '../prisma.service';
 import { TextExtractionService } from './text-extraction.service';
 import { ChunkingService } from './chunking.service';
@@ -15,6 +16,16 @@ export class DocumentsService {
 
   async getDocuments() {
     return this.prisma.document.findMany({
+      select: {
+        id: true,
+        title: true,
+        filename: true,
+        mimetype: true,
+        size: true,
+        createdAt: true,
+        updatedAt: true,
+        _count: { select: { chunks: true, conversations: true } },
+      },
       orderBy: {
         createdAt: 'desc',
       },
@@ -24,6 +35,16 @@ export class DocumentsService {
   async getDocument(id: string) {
     const document = await this.prisma.document.findUnique({
       where: { id },
+      select: {
+        id: true,
+        title: true,
+        filename: true,
+        mimetype: true,
+        size: true,
+        createdAt: true,
+        updatedAt: true,
+        _count: { select: { chunks: true, conversations: true } },
+      },
     });
 
     if (!document) {
@@ -33,16 +54,20 @@ export class DocumentsService {
     return document;
   }
 
-  async uploadDocument(file: any) {
+  async uploadDocument(file: Express.Multer.File) {
+    if (!file) {
+      throw new BadRequestException('A PDF file is required');
+    }
     // 1. Extract text from PDF
     const extractedText =
   file.mimetype === 'application/pdf'
     ? await this.textExtractionService.extractText(file.path)
     : null;
 
-console.log('========== EXTRACTED TEXT ==========');
-console.log(extractedText);
-console.log('====================================');
+    if (!extractedText?.trim()) {
+      await fs.unlink(file.path).catch(() => undefined);
+      throw new BadRequestException('No readable text could be extracted from this PDF');
+    }
 
     // 2. Create chunks
     const chunks = extractedText
@@ -97,8 +122,15 @@ console.log('====================================');
   }
 
   async deleteDocument(id: string) {
-    return this.prisma.document.delete({
+    const document = await this.prisma.document.findUnique({ where: { id } });
+    if (!document) {
+      throw new NotFoundException('Document not found');
+    }
+
+    const deleted = await this.prisma.document.delete({
       where: { id },
     });
+    await fs.unlink(document.path).catch(() => undefined);
+    return deleted;
   }
 }

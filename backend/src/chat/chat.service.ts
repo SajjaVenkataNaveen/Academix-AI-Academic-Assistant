@@ -304,6 +304,12 @@ Use the conversation history to understand references such as:
 Answer only using information supported by the document context
 and conversation.
 
+Write in clear, friendly language for a student. Start with the direct
+answer instead of phrases such as "Based on the provided context".
+Use short paragraphs and Markdown bullet or numbered lists when they make
+the answer easier to scan. Use bold text sparingly for meaningful terms or
+headings. Do not use decorative symbols or unnecessary formatting.
+
 If the answer is not present in the context, say:
 "I could not find this information in the uploaded documents."
 
@@ -321,12 +327,21 @@ ${content}
   const aiResponse =
     await this.aiService.generateResponse(prompt);
 
-  // 11. Save Gemini's response
+  const sources = relevantChunks.map((chunk) => ({
+    documentId: chunk.document.id,
+    documentTitle: chunk.document.title,
+    filename: chunk.document.filename,
+    chunkIndex: chunk.chunkIndex,
+    similarity: chunk.similarity,
+  }));
+
+  // 11. Save Gemini's response and the references used to produce it
   const aiMessage = await this.prisma.message.create({
     data: {
       content: aiResponse,
       sender: 'AI',
       conversationId,
+      sources,
     },
   });
 
@@ -334,13 +349,7 @@ ${content}
   return {
     userMessage,
     aiMessage,
-    sources: relevantChunks.map((chunk) => ({
-      documentId: chunk.document.id,
-      documentTitle: chunk.document.title,
-      filename: chunk.document.filename,
-      chunkIndex: chunk.chunkIndex,
-      similarity: chunk.similarity,
-    })),
+    sources,
   };
 }
 }

@@ -16,6 +16,8 @@ import {
 
 import { ChatService } from './chat.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { CreateConversationDto } from './dto/create-conversation.dto';
+import { AddMessageDto } from './dto/add-message.dto';
 
 @ApiTags('Chat')
 @ApiBearerAuth()
@@ -57,14 +59,13 @@ export class ChatController {
   },
 })
 createConversation(
-  @Body('title') title: string,
-  @Body('documentId') documentId: string,
+  @Body() body: CreateConversationDto,
   @Req() req: any,
 ) {
   return this.chatService.createConversation(
     req.user.sub,
-    title,
-    documentId,
+    body.title,
+    body.documentId,
   );
 }
 
@@ -82,13 +83,13 @@ createConversation(
   })
   addMessage(
     @Param('id') conversationId: string,
-    @Body('content') content: string,
+    @Body() body: AddMessageDto,
     @Req() req: any,
   ) {
     return this.chatService.addMessage(
       conversationId,
       req.user.sub,
-      content,
+      body.content,
     );
   }
 }
