@@ -1,10 +1,13 @@
 import {
+  BadRequestException,
   Controller,
   Delete,
   Get,
   Param,
   Post,
   UploadedFile,
+  ParseFilePipe,
+  MaxFileSizeValidator,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
@@ -22,6 +25,13 @@ import { DocumentsService } from './documents.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../common/roles.guard';
 import { Roles } from '../common/roles.decorator';
+
+const configuredMaxUploadSizeMb = Number(process.env.MAX_UPLOAD_SIZE_MB);
+const maxUploadSizeMb =
+  Number.isFinite(configuredMaxUploadSizeMb) && configuredMaxUploadSizeMb > 0
+    ? configuredMaxUploadSizeMb
+    : 50;
+const maxUploadSizeBytes = maxUploadSizeMb * 1024 * 1024;
 
 @ApiTags('Documents')
 @ApiBearerAuth()
@@ -47,6 +57,13 @@ export class DocumentsController {
   @UseInterceptors(
     FileInterceptor('file', {
       dest: './uploads',
+      limits: { fileSize: maxUploadSizeBytes },
+      fileFilter: (_request, file, callback) => {
+        if (file.mimetype !== 'application/pdf') {
+          return callback(new BadRequestException('Only PDF files are supported'), false);
+        }
+        callback(null, true);
+      },
     }),
   )
   @ApiConsumes('multipart/form-data')
@@ -61,7 +78,16 @@ export class DocumentsController {
       },
     },
   })
-  uploadDocument(@UploadedFile() file: any) {
+  uploadDocument(
+    @UploadedFile(
+      new ParseFilePipe({
+        validators: [
+          new MaxFileSizeValidator({ maxSize: maxUploadSizeBytes }),
+        ],
+      }),
+    )
+    file: Express.Multer.File,
+  ) {
     return this.documentsService.uploadDocument(file);
   }
 

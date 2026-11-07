@@ -1,0 +1,34 @@
+import { FileText, LoaderCircle, Search, Trash2, UploadCloud } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState, type DragEvent } from 'react';
+import { Alert, Button, EmptyState, Input, Spinner } from '../components/common/UI';
+import { useAuth } from '../contexts/AuthContext';
+import { documentsApi, getApiError } from '../services/api';
+import type { DocumentRecord } from '../types';
+
+const configuredMaxFileSizeMb = Number(import.meta.env.VITE_MAX_UPLOAD_SIZE_MB);
+const MAX_FILE_SIZE_MB =
+  Number.isFinite(configuredMaxFileSizeMb) && configuredMaxFileSizeMb > 0
+    ? configuredMaxFileSizeMb
+    : 50;
+const MAX_FILE_SIZE = MAX_FILE_SIZE_MB * 1024 * 1024;
+const fileSize = (bytes: number) => bytes < 1024 * 1024 ? `${Math.ceil(bytes / 1024)} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+const date = (value: string) => new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date(value));
+
+export function DocumentsPage() {
+  const { user } = useAuth(); const canManage = user?.role === 'FACULTY' || user?.role === 'ADMIN';
+  const [docs, setDocs] = useState<DocumentRecord[]>([]); const [loading, setLoading] = useState(true); const [uploading, setUploading] = useState(false); const [progress, setProgress] = useState(0); const [query, setQuery] = useState(''); const [notice, setNotice] = useState<{ type: 'error' | 'success'; text: string } | null>(null); const inputRef = useRef<HTMLInputElement>(null);
+  const load = useCallback(async () => { try { setDocs(await documentsApi.list()); } catch (err) { setNotice({ type: 'error', text: getApiError(err) }); } finally { setLoading(false); } }, []);
+  useEffect(() => { void load(); }, [load]);
+  const upload = async (file?: File) => { if (!file) return; setNotice(null); if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) return setNotice({ type: 'error', text: 'Only PDF files are supported.' }); if (file.size > MAX_FILE_SIZE) return setNotice({ type: 'error', text: `The PDF must be ${MAX_FILE_SIZE_MB} MB or smaller.` }); setUploading(true); setProgress(0); try { await documentsApi.upload(file, setProgress); setNotice({ type: 'success', text: `${file.name} was processed successfully.` }); await load(); } catch (err) { setNotice({ type: 'error', text: getApiError(err, 'The PDF could not be processed.') }); } finally { setUploading(false); if (inputRef.current) inputRef.current.value = ''; } };
+  const drop = (event: DragEvent) => { event.preventDefault(); void upload(event.dataTransfer.files[0]); };
+  const remove = async (doc: DocumentRecord) => { if (!window.confirm(`Delete “${doc.title}”? Existing conversations will keep their history but lose the document link.`)) return; try { await documentsApi.remove(doc.id); setDocs((items) => items.filter((item) => item.id !== doc.id)); setNotice({ type: 'success', text: 'Document deleted.' }); } catch (err) { setNotice({ type: 'error', text: getApiError(err, 'Could not delete the document.') }); } };
+  const filtered = docs.filter((doc) => doc.title.toLowerCase().includes(query.toLowerCase()));
+  if (loading) return <Spinner label="Loading documents" />;
+  return <div className="page-wrap"><header className="mb-8"><p className="eyebrow">Knowledge library</p><h1 className="page-title">Academic documents</h1><p className="page-subtitle">{canManage ? 'Upload and maintain the source material used by the assistant.' : 'Browse the approved source material available to the assistant.'}</p></header>
+    {notice && <div className="mb-6"><Alert type={notice.type}>{notice.text}</Alert></div>}
+    {canManage && <section className="card mb-6"><div onDragOver={(e) => e.preventDefault()} onDrop={drop} className="rounded-2xl border-2 border-dashed border-slate-300 bg-slate-50 px-6 py-10 text-center transition hover:border-brand-300 hover:bg-brand-50/50"><UploadCloud className="mx-auto h-10 w-10 text-brand-600" /><h2 className="mt-3 font-semibold text-ink">Drop a PDF here</h2><p className="mt-1 text-sm text-slate-500">PDF only, up to {MAX_FILE_SIZE_MB} MB</p><input ref={inputRef} className="hidden" type="file" accept="application/pdf,.pdf" onChange={(e) => void upload(e.target.files?.[0])} /><Button className="mt-5" disabled={uploading} onClick={() => inputRef.current?.click()}>{uploading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}{uploading ? `Processing ${progress}%` : 'Browse files'}</Button>{uploading && <div className="mx-auto mt-4 h-2 max-w-sm overflow-hidden rounded-full bg-slate-200"><div className="h-full bg-brand-600 transition-all" style={{ width: `${progress}%` }} /></div>}</div></section>}
+    <section className="card"><div className="mb-5 flex flex-col justify-between gap-4 sm:flex-row sm:items-center"><div><h2 className="section-title">Document library</h2><p className="text-sm text-slate-500">{docs.length} {docs.length === 1 ? 'document' : 'documents'} available</p></div><div className="relative sm:w-72"><Search className="input-icon" /><Input className="pl-10" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search documents" /></div></div>
+      {filtered.length ? <div className="overflow-x-auto"><table className="w-full min-w-[720px] text-left"><thead><tr className="border-b text-xs uppercase tracking-wide text-slate-400"><th className="px-3 py-3 font-semibold">Document</th><th className="px-3 py-3 font-semibold">Size</th><th className="px-3 py-3 font-semibold">Added</th><th className="px-3 py-3 font-semibold">Status</th>{canManage && <th className="px-3 py-3" />}</tr></thead><tbody className="divide-y divide-slate-100">{filtered.map((doc) => <tr key={doc.id}><td className="px-3 py-4"><div className="flex items-center gap-3"><div className="rounded-xl bg-rose-50 p-2 text-rose-600"><FileText className="h-5 w-5" /></div><div><p className="max-w-md truncate font-medium text-ink">{doc.title}</p><p className="text-xs text-slate-400">{doc._count?.chunks ?? 0} indexed chunks</p></div></div></td><td className="px-3 py-4 text-sm text-slate-500">{fileSize(doc.size)}</td><td className="px-3 py-4 text-sm text-slate-500">{date(doc.createdAt)}</td><td className="px-3 py-4"><span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">Ready</span></td>{canManage && <td className="px-3 py-4 text-right"><button onClick={() => void remove(doc)} aria-label={`Delete ${doc.title}`} className="rounded-lg p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-600"><Trash2 className="h-4 w-4" /></button></td>}</tr>)}</tbody></table></div> : <EmptyState icon={<FileText />} title={query ? 'No matching documents' : 'No documents available'} description={query ? 'Try a different search term.' : canManage ? 'Upload the first academic PDF to begin building the knowledge library.' : 'A faculty member or administrator needs to upload academic material first.'} />}
+    </section>
+  </div>;
+}

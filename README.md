@@ -1,107 +1,153 @@
-# Academix – AI-Powered Academic Knowledge Assistant
+# Academix AI — Academic Knowledge Assistant
 
-## 📌 Project Overview
+Academix AI is a full-stack academic knowledge platform that lets students ask questions about approved institutional PDFs and receive document-grounded answers with source references. Faculty manage the document library, while administrators manage users and roles.
 
-**Academix** is a conversational AI platform designed for **IIIT Sri City** that enables students to access academic information through natural language queries.
+## Features
 
-The system uses **Retrieval-Augmented Generation (RAG)** to retrieve relevant information from uploaded college documents such as regulations, lecture notes, previous question papers, timetables, and lab manuals, and then generates accurate, context-aware responses using a Large Language Model (LLM).
+- Student self-registration and JWT-based sign-in
+- Protected, role-aware React routes for `STUDENT`, `FACULTY`, and `ADMIN`
+- Responsive dashboards backed by live API data
+- PDF upload, text extraction, OCR fallback, chunking, and Gemini embeddings
+- Document-linked conversations with persistent history
+- Retrieval-Augmented Generation (RAG) with similarity-ranked sources
+- Source title, filename, chunk index, and relevance shown with responses
+- Faculty/admin document management
+- Admin user creation, editing, role assignment, and deletion
+- Swagger API documentation
 
----
-
-## 🎯 Problem Statement
-
-Students often spend significant time searching through multiple academic documents to find relevant information. Academix aims to reduce this effort by providing a unified conversational interface for academic knowledge retrieval.
-
----
-
-## 👥 User Roles
-
-* **Student** – Ask academic questions, generate summaries, quizzes, and study notes.
-* **Faculty** – Upload and manage academic resources.
-* **Admin** – Manage users, documents, and system permissions.
-
----
-
-## 🧠 Core Features
-
-* Secure authentication and role-based access
-* Manual document upload (PDF, DOCX, PPT)
-* RAG-based document retrieval
-* Conversational AI chat interface
-* Source-aware responses
-* Chat history management
-* Academic quiz and summary generation
-
----
-
-## 🏗️ Proposed Architecture
+## Architecture
 
 ```text
-User → Frontend → Backend API → RAG Pipeline → Vector Database → LLM → Response
+React + Vite frontend
+        │ REST + Bearer JWT
+        ▼
+NestJS API ── Prisma ORM ── PostgreSQL
+        │
+        ├── PDF text extraction / Tesseract OCR
+        ├── Gemini Embedding 001
+        └── Gemini answer generation
 ```
 
----
+The backend stores users, documents, document chunks, conversations, messages, and response source metadata in PostgreSQL. The browser stores the access token in `sessionStorage`; this limits persistence to the current browser tab but remains exposed to JavaScript, so an HTTP-only cookie flow is recommended for a future production deployment.
 
-## 🛠️ Planned Tech Stack
+## Technology stack
 
-### Frontend
+| Layer | Technology |
+| --- | --- |
+| Frontend | React 19, Vite, TypeScript, React Router, Axios, Tailwind CSS, Lucide React |
+| Backend | NestJS 11, TypeScript, JWT, bcrypt, Swagger |
+| Data | PostgreSQL, Prisma ORM |
+| AI | Google Gemini, Gemini Embedding 001, cosine-similarity retrieval |
+| Documents | Poppler (`pdftotext`, `pdftoppm`), Tesseract.js OCR fallback |
 
-* React / Next.js
-* TypeScript
-* Tailwind CSS
+## Prerequisites
 
-### Backend
+- Node.js 20 or newer
+- PostgreSQL
+- A Google Gemini API key
+- Poppler available on `PATH` for PDF extraction (`pdftotext` and `pdftoppm`)
 
-* NestJS
-* Node.js
-* JWT Authentication
+## Backend setup
 
-### AI / RAG
+```bash
+cd backend
+npm install
+```
 
-* LangChain
-* Gemini API
-* Vector Database (Pinecone / Qdrant / ChromaDB)
+Copy `backend/.env.example` to `backend/.env` and set:
 
-### Database
+```dotenv
+DATABASE_URL="postgresql://postgres:password@localhost:5432/academix?schema=public"
+JWT_SECRET="replace-with-a-long-random-secret"
+GEMINI_API_KEY="your-google-gemini-api-key"
+PORT=3000
+FRONTEND_URLS="http://localhost:5173,http://127.0.0.1:5173"
+MAX_UPLOAD_SIZE_MB=50
+```
 
-* PostgreSQL
-* Prisma ORM
+Apply migrations and generate the Prisma client:
 
----
+```bash
+npx prisma migrate deploy
+npx prisma generate
+```
 
-## 📅 Development Approach
+Start the backend with `npm run start:dev`.
 
-This project is being developed incrementally with a strong focus on:
+- API: `http://localhost:3000`
+- Swagger: `http://localhost:3000/api`
+- Prisma Studio: run `npx prisma studio` from `backend`
 
-* Conceptual understanding
-* System architecture design
-* Documentation and weekly progress tracking
-* Industry-style Git workflow and code reviews
+## Frontend setup
 
----
+```bash
+cd frontend
+npm install
+```
 
-## 📈 Current Status
+Copy `frontend/.env.example` to `frontend/.env`:
 
-**Phase:** Project Planning & Architecture Design
+```dotenv
+VITE_API_BASE_URL=http://localhost:3000
+VITE_MAX_UPLOAD_SIZE_MB=50
+```
 
-* [x] Problem statement finalized
-* [x] Project title finalized
-* [x] User roles identified
-* [x] RAG fundamentals studied
-* [ ] System architecture design
-* [ ] Authentication module
-* [ ] Document upload module
-* [ ] RAG pipeline implementation
-* [ ] Conversational chat interface
+Start the frontend with `npm run dev`, then open `http://localhost:5173`.
 
----
+## Main workflows
 
-## 📧 Project Guide Communication
+### Student
 
-Weekly progress reports and meeting notes will be maintained in the repository as part of the continuous evaluation process.
+1. Register or sign in.
+2. Browse available documents.
+3. Open **AI Assistant** and select a document.
+4. Ask a question.
+5. Read the grounded response and expand its source references.
+6. Return to any previous conversation from the conversation sidebar.
 
----
+### Faculty
 
-## 🚀 Vision
+1. Sign in with a faculty account created by an administrator.
+2. Open **Documents**.
+3. Upload a PDF (50 MB by default; configurable through the backend and frontend environment variables).
+4. Wait for extraction, chunking, and embedding generation to finish.
+5. Manage the resulting document library or use the assistant.
 
-To build a scalable **AI-powered academic knowledge platform** that can eventually evolve into a comprehensive conversational assistant for higher-education institutions.
+### Administrator
+
+1. Sign in with an admin account.
+2. Open **User management** to create or edit users and roles.
+3. Manage documents with the same permissions as faculty.
+
+Public registration always creates a `STUDENT`. Only an authenticated administrator can assign `FACULTY` or `ADMIN` roles through the protected users API.
+
+## API overview
+
+| Method | Route | Access |
+| --- | --- | --- |
+| `POST` | `/auth/register` | Public; creates student |
+| `POST` | `/auth/login` | Public |
+| `GET` | `/auth/me` | Authenticated |
+| `GET` | `/documents` | Authenticated |
+| `GET` | `/documents/:id` | Authenticated |
+| `POST` | `/documents/upload` | Faculty, admin |
+| `DELETE` | `/documents/:id` | Faculty, admin |
+| `GET` | `/chat` | Authenticated; own conversations |
+| `GET` | `/chat/:id` | Authenticated; owner only |
+| `POST` | `/chat` | Authenticated |
+| `POST` | `/chat/:id/messages` | Authenticated; owner only |
+| `GET/POST` | `/users` | Admin |
+| `GET/PATCH/DELETE` | `/users/:id` | Admin |
+
+## Build and test
+
+```bash
+cd backend
+npm run build
+npm test
+
+cd ../frontend
+npm run build
+```
+
+Do not place database credentials, JWT secrets, or Gemini keys in `VITE_*` variables. Vite variables are included in the browser bundle.
